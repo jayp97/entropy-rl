@@ -473,7 +473,8 @@ void c_step(Entropy* env) {
     if (env->agent_role == ROLE_ORDER) {
         // Agent is Order: decode Order slide or pass
         if (action == ORDER_PASS_ACTION) {
-            // Pass - do nothing (valid)
+            // Pass - small penalty to discourage always-passing
+            env->rewards[0] = -0.1f;
         } else if (action >= ORDER_ACTION_BASE && action < ORDER_PASS_ACTION) {
             int order_action = action - ORDER_ACTION_BASE;
             int cell = order_action / 4;
