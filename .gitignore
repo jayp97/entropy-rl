@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Compiled extensions
+*.so
+*.dylib
+
+# Virtual environment
+.venv/
+
+# PufferLib build artifacts
+PufferLib/raylib*/
+PufferLib/box2d*/
+PufferLib/build/
+PufferLib/dist/
+PufferLib/*.egg-info/
+
+# Training artifacts
+experiments/
+checkpoints/
+wandb/
+.neptune/
+
+# OS
+.DS_Store
+
+# Claude
+.claude/
