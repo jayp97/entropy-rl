@@ -372,59 +372,47 @@ class Go(nn.Module):
         action = self.actor(flat_hidden)
         return action, value
 
-class EntropyLSTM(pufferlib.models.LSTMWrapper):
-    def __init__(self, env, policy, input_size=256, hidden_size=256):
-        super().__init__(env, policy, input_size, hidden_size)
-
-class Entropy(nn.Module):
-    def __init__(self, env, cnn_channels=64, hidden_size=256, **kwargs):
+class EntropyPolicy(nn.Module):
+    """Masked MLP policy for Entropy. Splits observations into features (402)
+    and action masks (246), encodes only features, applies mask to logits.
+    Works with LSTMWrapper via encode_observations/decode_actions interface."""
+    def __init__(self, env, hidden_size=128, **kwargs):
         super().__init__()
         self.hidden_size = hidden_size
         self.is_continuous = False
-        # 8 planes (7 colors + empty) on 7x7 board = 392 board features
-        # 10 aux features (bag[7] + current_draw + phase + turn_progress)
-        self.board_size = 392
-        self.cnn = nn.Sequential(
-            pufferlib.pytorch.layer_init(
-                nn.Conv2d(8, cnn_channels, 3, padding=1)),
-            nn.ReLU(),
-            pufferlib.pytorch.layer_init(
-                nn.Conv2d(cnn_channels, cnn_channels, 3, padding=1)),
-            nn.ReLU(),
-            nn.Flatten(),
+        self.obs_size = 402   # board features only
+        self.mask_size = 246  # action masks
+
+        self.encoder = nn.Sequential(
+            pufferlib.pytorch.layer_init(nn.Linear(self.obs_size, hidden_size)),
+            nn.GELU(),
         )
-        cnn_flat_size = cnn_channels * 7 * 7  # 3136
-        self.flat = pufferlib.pytorch.layer_init(nn.Linear(10, 32))
-        self.proj = pufferlib.pytorch.layer_init(
-            nn.Linear(cnn_flat_size + 32, hidden_size))
-        self.actor = pufferlib.pytorch.layer_init(
-            nn.Linear(hidden_size, env.single_action_space.n), std=0.01)
-        self.value_fn = pufferlib.pytorch.layer_init(
+        self.decoder = pufferlib.pytorch.layer_init(
+            nn.Linear(hidden_size, self.mask_size), std=0.01)
+        self.value = pufferlib.pytorch.layer_init(
             nn.Linear(hidden_size, 1), std=1)
-
-    def forward(self, observations, state=None):
-        hidden = self.encode_observations(observations)
-        actions, value = self.decode_actions(hidden)
-        return actions, value
-
-    def forward_eval(self, observations, state=None):
-        return self.forward(observations, state)
-
-    def forward_train(self, x, state=None):
-        return self.forward(x, state)
+        self._action_mask = None
 
     def encode_observations(self, observations, state=None):
-        board = observations[:, :self.board_size].view(-1, 8, 7, 7).float()
-        aux = observations[:, self.board_size:].float()
-        cnn_features = self.cnn(board)
-        flat_features = F.relu(self.flat(aux))
-        features = torch.cat([cnn_features, flat_features], dim=1)
-        return F.relu(self.proj(features))
+        batch_size = observations.shape[0]
+        obs = observations.view(batch_size, -1).float()
+        features = obs[:, :self.obs_size]
+        self._action_mask = obs[:, self.obs_size:]  # 0=valid, 1=invalid
+        return self.encoder(features)
 
-    def decode_actions(self, flat_hidden, state=None):
-        value = self.value_fn(flat_hidden)
-        action = self.actor(flat_hidden)
-        return action, value
+    def decode_actions(self, hidden):
+        logits = self.decoder(hidden)
+        value = self.value(hidden)
+        if self._action_mask is not None:
+            logits = logits.masked_fill(self._action_mask.bool(), float('-inf'))
+        return logits, value
+
+    def forward_eval(self, observations, state=None):
+        hidden = self.encode_observations(observations, state=state)
+        return self.decode_actions(hidden)
+
+    def forward(self, observations, state=None):
+        return self.forward_eval(observations, state)
 
 class MOBA(nn.Module):
     def __init__(self, env, cnn_channels=128, hidden_size=128, **kwargs):
