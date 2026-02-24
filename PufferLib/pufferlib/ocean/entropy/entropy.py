@@ -25,7 +25,7 @@ class Entropy(pufferlib.PufferEnv):
         self.tick = 0
 
         self.single_observation_space = gymnasium.spaces.Box(
-            low=0, high=1, shape=(402,), dtype=np.float32)
+            low=0, high=1, shape=(648,), dtype=np.float32)
         self.single_action_space = gymnasium.spaces.Discrete(246)
 
         super().__init__(buf=buf)
