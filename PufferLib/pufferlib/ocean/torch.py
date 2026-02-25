@@ -404,7 +404,7 @@ class EntropyPolicy(nn.Module):
         logits = self.decoder(hidden)
         value = self.value(hidden)
         if self._action_mask is not None:
-            logits = logits.masked_fill(self._action_mask.bool(), float('-inf'))
+            logits = logits.masked_fill(self._action_mask.bool(), -1e9)
         return logits, value
 
     def forward_eval(self, observations, state=None):
