@@ -373,22 +373,39 @@ class Go(nn.Module):
         return action, value
 
 class EntropyPolicy(nn.Module):
-    """Masked MLP policy for Entropy. Splits observations into features (402)
-    and action masks (246), encodes only features, applies mask to logits.
+    """CNN policy for Entropy. Reshapes board to 8x7x7 spatial feature maps
+    (7 color planes + 1 empty plane), processes with CNN, combines with
+    non-spatial features (bag, draw, phase, turn), applies action masking.
     Works with LSTMWrapper via encode_observations/decode_actions interface."""
-    def __init__(self, env, hidden_size=128, **kwargs):
+    def __init__(self, env, hidden_size=256, cnn_channels=64, **kwargs):
         super().__init__()
         self.hidden_size = hidden_size
         self.is_continuous = False
-        self.obs_size = 402   # board features only
-        self.mask_size = 246  # action masks
 
-        self.encoder = nn.Sequential(
-            pufferlib.pytorch.layer_init(nn.Linear(self.obs_size, hidden_size)),
+        # Spatial encoder: 8 channels (7 colors + empty) on 7x7 board
+        self.cnn = nn.Sequential(
+            pufferlib.pytorch.layer_init(nn.Conv2d(8, cnn_channels, 3, padding=1)),
+            nn.ReLU(),
+            pufferlib.pytorch.layer_init(nn.Conv2d(cnn_channels, cnn_channels, 3, padding=1)),
+            nn.ReLU(),
+            nn.Flatten(),
+        )
+
+        # Non-spatial: bag(7) + current_draw(1) + phase(1) + turn_progress(1) = 10
+        self.flat = nn.Sequential(
+            pufferlib.pytorch.layer_init(nn.Linear(10, 64)),
+            nn.ReLU(),
+        )
+
+        # Combine spatial + non-spatial
+        cnn_flat_size = cnn_channels * 7 * 7  # 3136
+        self.proj = nn.Sequential(
+            pufferlib.pytorch.layer_init(nn.Linear(cnn_flat_size + 64, hidden_size)),
             nn.GELU(),
         )
+
         self.decoder = pufferlib.pytorch.layer_init(
-            nn.Linear(hidden_size, self.mask_size), std=0.01)
+            nn.Linear(hidden_size, 246), std=0.01)
         self.value = pufferlib.pytorch.layer_init(
             nn.Linear(hidden_size, 1), std=1)
         self._action_mask = None
@@ -396,9 +413,18 @@ class EntropyPolicy(nn.Module):
     def encode_observations(self, observations, state=None):
         batch_size = observations.shape[0]
         obs = observations.view(batch_size, -1).float()
-        features = obs[:, :self.obs_size]
-        self._action_mask = obs[:, self.obs_size:]  # 0=valid, 1=invalid
-        return self.encoder(features)
+
+        # Spatial: 7 color planes + 1 empty = 8 x 49 = 392
+        spatial = obs[:, :392].view(-1, 8, 7, 7)
+        # Non-spatial: bag(7) + draw(1) + phase(1) + turn(1) = 10
+        nonspatial = obs[:, 392:402]
+        # Action mask: 246 values (0=valid, 1=invalid)
+        self._action_mask = obs[:, 402:]
+
+        cnn_out = self.cnn(spatial)
+        flat_out = self.flat(nonspatial)
+        combined = torch.cat([cnn_out, flat_out], dim=1)
+        return self.proj(combined)
 
     def decode_actions(self, hidden):
         logits = self.decoder(hidden)
