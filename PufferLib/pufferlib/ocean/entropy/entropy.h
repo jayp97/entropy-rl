@@ -505,7 +505,7 @@ void c_step(Entropy* env) {
         // Check if board is full (game over)
         if (env->turn_number >= NUM_CELLS) {
             int final_score = compute_total_score(env);
-            float normalized = ((float)final_score - 75.0f) / 25.0f;
+            float normalized = ((float)final_score - 40.0f) / 30.0f;
             if (normalized > 1.0f) normalized = 1.0f;
             if (normalized < -1.0f) normalized = -1.0f;
             env->rewards[0] = normalized;
@@ -525,7 +525,7 @@ void c_step(Entropy* env) {
         // Check again after Chaos placed
         if (env->turn_number >= NUM_CELLS) {
             int final_score = compute_total_score(env);
-            float normalized = ((float)final_score - 75.0f) / 25.0f;
+            float normalized = ((float)final_score - 40.0f) / 30.0f;
             if (normalized > 1.0f) normalized = 1.0f;
             if (normalized < -1.0f) normalized = -1.0f;
             env->rewards[0] = normalized;
@@ -563,7 +563,7 @@ void c_step(Entropy* env) {
         if (env->turn_number >= NUM_CELLS) {
             int final_score = compute_total_score(env);
             // Chaos wants LOW score, so invert reward
-            float normalized = (75.0f - (float)final_score) / 25.0f;
+            float normalized = (40.0f - (float)final_score) / 30.0f;
             if (normalized > 1.0f) normalized = 1.0f;
             if (normalized < -1.0f) normalized = -1.0f;
             env->rewards[0] = normalized;
